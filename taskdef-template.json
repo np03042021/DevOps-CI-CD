@@ -1,0 +1,26 @@
+{
+  "family": "nginx-ecs-demo-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "REPLACED_AT_RUNTIME",
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "REPLACED_AT_RUNTIME",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 80, "protocol": "tcp" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-region": "REPLACED_AT_RUNTIME",
+          "awslogs-group": "/ecs/nginx-ecs-demo",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
