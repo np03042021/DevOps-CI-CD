@@ -1,0 +1,62 @@
+name: Deploy to ECS (Fargate)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "index.html"
+      - "Dockerfile"
+
+env:
+  AWS_REGION: ap-south-1   # <— change to your Region
+  PROJECT_NAME: nginx-ecs-demo
+  ECR_REPO: my-sample-app
+  CLUSTER: nginx-ecs-demo-cluster
+  SERVICE: nginx-ecs-demo-svc
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/${{ env.PROJECT_NAME }}-github-oidc-deploy
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build image
+      run: |
+        IMAGE_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}:${{ github.sha }}
+        echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+        docker build -t "$IMAGE_URI" .
+
+    - name: Push image
+      run: docker push "$IMAGE_URI"
+
+    - name: Prepare task definition (inject image/region/role)
+      id: render
+      run: |
+        TD=taskdef-template.json
+        EXEC_ROLE_ARN=$(aws iam get-role --role-name "${{ env.PROJECT_NAME }}-ecsTaskExecutionRole" --query 'Role.Arn' --output text)
+        sed -e "s#REPLACED_AT_RUNTIME#${{ env.AWS_REGION }}#g" \
+            -e "0,/REPLACED_AT_RUNTIME/s##${EXEC_ROLE_ARN}#" \
+            -e "s#REPLACED_AT_RUNTIME#${IMAGE_URI}#" \
+            "$TD" > taskdef.json
+        cat taskdef.json
+
+    - name: Deploy new task definition to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      with:
+        task-definition: taskdef.json
+        service: ${{ env.SERVICE }}
+        cluster: ${{ env.CLUSTER }}
+        wait-for-service-stability: true
