@@ -1,45 +1,46 @@
-name: "Deploy to Server"
+name: Deploy Docker App to EC2
 
 on:
   push:
-      branches:
-        - main
+    branches:
+      - main
+    paths:
+      - "index.html"
+      - "Dockerfile"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      SERVER_IP: ${{ vars.SERVER_IP }}
 
     steps:
-      - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: "Build Docker Image"
-        run: |
-          docker login -u aashishchaudhari -p $DOCKERHUB_PAT
-          docker build -t aashishchaudhari/public-registry:1.1 .
-          docker push aashishchaudhari/public-registry:1.1
-        env:
-          DOCKERHUB_PAT: ${{ secrets.DOCKERHUB_PAT }}
+    - name: Build Docker image
+      run: |
+        docker build -t my-nginx-image .
 
-      - name: "Configure SSH"
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-          touch ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-      
-      - name: "Put SSH Key in Docker file for Server Access"
-        run: |
-          touch pem.pem
-          echo $SSH_KEY64 | base64 -d > pem.pem && chmod 400 pem.pem
-          ssh-keygen -R $SERVER_IP
-        env: 
-          SSH_KEY64: ${{ secrets.SSH_KEY64 }}
+    - name: Save image to tar
+      run: |
+        docker save my-nginx-image -o my-nginx-image.tar
 
-      - name: "Docker Pull and Restart Docker"
-        run: |
-          ssh -t ubuntu@$SERVER_IP -i pem.pem 'docker pull aashishchaudhari/public-registry:1.1'
-          ssh -t ubuntu@$SERVER_IP -i pem.pem 'docker stop mysite && docker rm mysite'
-          ssh -t ubuntu@$SERVER_IP -i pem.pem 'docker run --name mysite -p 80:80 -d aashishchaudhari/public-registry:1.1'
+    - name: Copy image to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "my-nginx-image.tar"
+        target: "/home/ubuntu/"
+
+    - name: Deploy over SSH
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          docker stop my-nginx-container || true
+          docker rm my-nginx-container || true
+          docker load -i my-nginx-image.tar
+          docker run -d -p 80:80 --name my-nginx-container my-nginx-image
