@@ -12,7 +12,7 @@ public class HelloController {
   @GetMapping("/hello")
   public Map<String, Object> hello() {
     return Map.of(
-        "message", "Hello from Spring Boot running on Kubernetes/EKS!",
+        "message", "Hello Again from Spring Boot running on Kubernetes/EKS!",
         "timestamp", Instant.now().toString()
     );
   }
